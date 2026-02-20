@@ -136,7 +136,7 @@ export function decorateCommand(command: Command, version: string) {
           version,
           create: () => new BrowserServerBackend(config, browserContextFactory)
         };
-        await mcpServer.start(factory, config.server);
+        await mcpServer.start(factory, config.server, config);
       });
 }
 

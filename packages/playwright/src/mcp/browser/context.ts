@@ -55,6 +55,10 @@ export class Context {
   private _runningToolName: string | undefined;
   private _abortController = new AbortController();
 
+  // Stored listener references for cleanup in dispose()
+  private _pageListener: ((page: playwright.Page) => void) | undefined;
+  private _closeListener: (() => void) | undefined;
+
   onBrowserContextClosed: (() => void) | undefined;
 
   constructor(options: ContextOptions) {
@@ -173,6 +177,21 @@ export class Context {
 
   async dispose() {
     this._abortController.abort('MCP context disposed');
+    // Remove event listeners from the shared browserContext to prevent ghost tabs
+    // when using SharedContextFactory (multiple Context instances per browserContext).
+    if (this._browserContextPromise) {
+      try {
+        const { browserContext } = await this._browserContextPromise;
+        if (this._pageListener)
+          browserContext.removeListener('page', this._pageListener);
+        if (this._closeListener)
+          browserContext.removeListener('close', this._closeListener);
+      } catch {
+        // browserContext may have already been closed
+      }
+    }
+    this._pageListener = undefined;
+    this._closeListener = undefined;
     await this.closeBrowserContext();
     Context._allContexts.delete(this);
   }
@@ -223,8 +242,11 @@ export class Context {
     await this._setupRequestInterception(browserContext);
     for (const page of browserContext.pages())
       this._onPageCreated(page);
-    browserContext.on('page', page => this._onPageCreated(page));
-    browserContext.on('close', () => this.onBrowserContextClosed?.());
+
+    this._pageListener = (page: playwright.Page) => this._onPageCreated(page);
+    this._closeListener = () => this.onBrowserContextClosed?.();
+    browserContext.on('page', this._pageListener);
+    browserContext.on('close', this._closeListener);
     if (this.config.saveTrace) {
       await (browserContext.tracing as Tracing).start({
         name: 'trace-' + Date.now(),

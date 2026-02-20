@@ -268,7 +268,11 @@ class PersistentContextFactory implements BrowserContextFactory {
 }
 
 async function injectCdpPort(browserConfig: FullConfig['browser']) {
-  if (browserConfig.browserName === 'chromium')
+  // When assistantMode is enabled, skip port allocation so Chromium uses
+  // --remote-debugging-pipe instead of --remote-debugging-port. Pipe mode
+  // communicates over inherited file descriptors (3/4) rather than a TCP
+  // listener, removing the localhost port-scanning detection surface.
+  if (browserConfig.browserName === 'chromium' && !browserConfig.launchOptions?.assistantMode)
     (browserConfig.launchOptions as any).cdpPort = await findFreePort();
 }
 
