@@ -81,7 +81,6 @@ export const defaultConfig: FullConfig = {
   browser: {
     browserName: 'chromium',
     launchOptions: {
-      channel: 'chrome',
       headless: os.platform() === 'linux' && !process.env.DISPLAY,
     },
     contextOptions: {

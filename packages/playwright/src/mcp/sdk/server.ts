@@ -173,13 +173,13 @@ function addServerListener(server: Server, event: 'close' | 'initialized', liste
   };
 }
 
-export async function start(serverBackendFactory: ServerBackendFactory, options: { host?: string; port?: number, allowedHosts?: string[], socketPath?: string }) {
+export async function start(serverBackendFactory: ServerBackendFactory, options: { host?: string; port?: number, allowedHosts?: string[], socketPath?: string }, mutableConfig?: import('../browser/config').FullConfig) {
   if (options.port === undefined) {
     await connect(serverBackendFactory, new mcpBundle.StdioServerTransport(), false);
     return;
   }
 
-  const url = await startMcpHttpServer(options, serverBackendFactory, options.allowedHosts);
+  const url = await startMcpHttpServer(options, serverBackendFactory, options.allowedHosts, mutableConfig);
 
   const mcpConfig: any = { mcpServers: { } };
   mcpConfig.mcpServers[serverBackendFactory.nameInConfig] = {

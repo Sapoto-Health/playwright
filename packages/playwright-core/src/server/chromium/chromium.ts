@@ -314,16 +314,25 @@ export class Chromium extends BrowserType {
     const chromeArguments = [...chromiumSwitches(options.assistantMode, options.channel)];
 
     // See https://issues.chromium.org/issues/40277080
-    chromeArguments.push('--enable-unsafe-swiftshader');
+    // assistantMode: skip SwiftShader to use real GPU — avoids "Google SwiftShader" WebGL fingerprint
+    if (!options.assistantMode)
+      chromeArguments.push('--enable-unsafe-swiftshader');
 
     if (options.headless) {
       chromeArguments.push('--headless');
 
-      chromeArguments.push(
-          '--hide-scrollbars',
-          '--mute-audio',
-          '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
-      );
+      if (options.assistantMode) {
+        // assistantMode: minimal headless flags to avoid detectable side effects
+        // --hide-scrollbars and --blink-settings omitted — real browsers have scrollbars
+        // and standard pointer/hover types
+        chromeArguments.push('--mute-audio');
+      } else {
+        chromeArguments.push(
+            '--hide-scrollbars',
+            '--mute-audio',
+            '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
+        );
+      }
     }
     if (options.chromiumSandbox !== true)
       chromeArguments.push('--no-sandbox');
@@ -363,6 +372,10 @@ export class Chromium extends BrowserType {
       return options.headless ? 'chromium-tip-of-tree-headless-shell' : 'chromium-tip-of-tree';
     if (options.channel)
       return options.channel;
+    // assistantMode: use full Chromium even in headless for better stealth fingerprint
+    // (real navigator.plugins, window.chrome, GPU rendering instead of SwiftShader)
+    if (options.assistantMode)
+      return 'chromium';
     return options.headless ? 'chromium-headless-shell' : 'chromium';
   }
 }

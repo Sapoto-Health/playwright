@@ -45,48 +45,114 @@ const disabledFeatures = (assistantMode?: boolean) => [
   assistantMode ? 'AutomationControlled' : '',
 ].filter(Boolean);
 
-export const chromiumSwitches = (assistantMode?: boolean, channel?: string, android?: boolean) => [
-  '--disable-field-trial-config', // https://source.chromium.org/chromium/chromium/src/+/main:testing/variations/README.md
-  '--disable-background-networking',
+/**
+ * Minimal disabled features for assistantMode stealth.
+ * Only includes features required for Playwright stability or core stealth.
+ * Omits features that real Chrome has enabled (Translate, HttpsUpgrades,
+ * MediaRouter, GlobalMediaControls, etc.) to reduce fingerprint divergence.
+ */
+const stealthDisabledFeatures = () => [
+  'AutomationControlled',
+  // Playwright stability — required for correct beforeunload handling
+  'AvoidUnnecessaryBeforeUnloadCheckSync',
+  // Playwright stability — required for correct event dispatch
+  'BoundaryEventDispatchTracksNodeRemoval',
+  // Persistent profiles must survive browser close
+  'DestroyProfileOnBrowserClose',
+  // Playwright stability — required for consistent page rendering
+  'PaintHolding',
+  // Chromium stability on Windows
+  'AutoDeElevate',
+  // Prevents unnecessary network activity on startup
+  'OptimizationHints',
+];
+
+/**
+ * Minimal Chrome flags for assistantMode (stealth).
+ * Goal: look as close to a normal Chrome launch as possible.
+ * Only includes flags required for CDP operation, Playwright stability,
+ * or crash prevention. Omits flags whose side effects are detectable
+ * by antibot systems (field trial config, background networking,
+ * extensions, color profile, keychain, etc.).
+ */
+const stealthSwitches = () => [
+  // --- Required for CDP / Playwright reliability ---
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
-  '--disable-back-forward-cache', // Avoids surprises like main request not being intercepted during page.goBack().
-  '--disable-breakpad',
-  '--disable-client-side-phishing-detection',
-  '--disable-component-extensions-with-background-pages',
-  '--disable-component-update', // Avoids unneeded network activity after startup.
-  '--no-default-browser-check',
-  '--disable-default-apps',
-  '--disable-dev-shm-usage',
-  '--disable-extensions',
-  '--disable-features=' + disabledFeatures(assistantMode).join(','),
-  process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? '' : '--enable-features=CDPScreenshotNewSurface',
+  '--disable-back-forward-cache', // Required for Playwright navigation model (page.goBack)
+  '--disable-breakpad', // No crash reporter needed
+  '--disable-component-update', // Avoid network noise during agent runs
+  '--disable-dev-shm-usage', // Prevent /dev/shm crashes on Linux
+  '--disable-hang-monitor', // Prevent "page unresponsive" dialogs
+  '--disable-ipc-flooding-protection', // Required for high-throughput CDP
+  '--disable-popup-blocking', // Agent needs to handle popups
+  '--disable-prompt-on-repost', // Avoid confirmation dialogs on POST resubmit
+  '--disable-renderer-backgrounding', // Keep renderers active
   '--allow-pre-commit-input',
-  '--disable-hang-monitor',
-  '--disable-ipc-flooding-protection',
-  '--disable-popup-blocking',
-  '--disable-prompt-on-repost',
-  '--disable-renderer-backgrounding',
-  '--force-color-profile=srgb',
-  '--metrics-recording-only',
-  '--no-first-run',
-  '--password-store=basic',
-  '--use-mock-keychain',
-  // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
-  '--no-service-autorun',
-  '--export-tagged-pdf',
-  // https://chromium-review.googlesource.com/c/chromium/src/+/4853540
-  '--disable-search-engine-choice-screen',
-  // https://issues.chromium.org/41491762
-  '--unsafely-disable-devtools-self-xss-warnings',
-  // Edge can potentially restart on Windows (msRelaunchNoCompatLayer) which looses its file descriptors (stdout/stderr) and CDP (3/4). Disable until fixed upstream.
-  '--edge-skip-compat-layer-relaunch',
-  assistantMode ? '' : '--enable-automation',
-  // This disables Chrome for Testing infobar that is visible in the persistent context.
-  // The switch is ignored everywhere else, including Chromium/Chrome/Edge.
-  '--disable-infobars',
-  // Less annoying popups.
-  '--disable-search-engine-choice-screen',
-  // Prevents the "three dots" menu crash in IdentityManager::HasPrimaryAccount for ephemeral contexts.
-  android ? '' : '--disable-sync',
+
+  // --- Required for correct behavior ---
+  '--no-first-run', // Skip first-run dialogs / setup
+  '--export-tagged-pdf', // PDF download support
+  '--disable-infobars', // Hide "Chrome is being controlled" infobar
+  '--edge-skip-compat-layer-relaunch', // Prevent Edge restart on Windows losing CDP fds
+  '--password-store=basic', // Prevent macOS Keychain password prompts (not web-detectable)
+  '--use-mock-keychain', // Same — avoids system keychain access (not web-detectable)
+
+  // --- Feature flags ---
+  '--disable-features=' + stealthDisabledFeatures().join(','),
+  process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? '' : '--enable-features=CDPScreenshotNewSurface',
+
+  // --- Explicitly NOT enabling automation ---
+  // '--enable-automation' is omitted — assistantMode always skips it
 ].filter(Boolean);
+
+export const chromiumSwitches = (assistantMode?: boolean, channel?: string, android?: boolean) => {
+  if (assistantMode)
+    return stealthSwitches();
+
+  return [
+    '--disable-field-trial-config', // https://source.chromium.org/chromium/chromium/src/+/main:testing/variations/README.md
+    '--disable-background-networking',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-back-forward-cache', // Avoids surprises like main request not being intercepted during page.goBack().
+    '--disable-breakpad',
+    '--disable-client-side-phishing-detection',
+    '--disable-component-extensions-with-background-pages',
+    '--disable-component-update', // Avoids unneeded network activity after startup.
+    '--no-default-browser-check',
+    '--disable-default-apps',
+    '--disable-dev-shm-usage',
+    '--disable-extensions',
+    '--disable-features=' + disabledFeatures(assistantMode).join(','),
+    process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? '' : '--enable-features=CDPScreenshotNewSurface',
+    '--allow-pre-commit-input',
+    '--disable-hang-monitor',
+    '--disable-ipc-flooding-protection',
+    '--disable-popup-blocking',
+    '--disable-prompt-on-repost',
+    '--disable-renderer-backgrounding',
+    '--force-color-profile=srgb',
+    '--metrics-recording-only',
+    '--no-first-run',
+    '--password-store=basic',
+    '--use-mock-keychain',
+    // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
+    '--no-service-autorun',
+    '--export-tagged-pdf',
+    // https://chromium-review.googlesource.com/c/chromium/src/+/4853540
+    '--disable-search-engine-choice-screen',
+    // https://issues.chromium.org/41491762
+    '--unsafely-disable-devtools-self-xss-warnings',
+    // Edge can potentially restart on Windows (msRelaunchNoCompatLayer) which looses its file descriptors (stdout/stderr) and CDP (3/4). Disable until fixed upstream.
+    '--edge-skip-compat-layer-relaunch',
+    '--enable-automation',
+    // This disables Chrome for Testing infobar that is visible in the persistent context.
+    // The switch is ignored everywhere else, including Chromium/Chrome/Edge.
+    '--disable-infobars',
+    // Less annoying popups.
+    '--disable-search-engine-choice-screen',
+    // Prevents the "three dots" menu crash in IdentityManager::HasPrimaryAccount for ephemeral contexts.
+    android ? '' : '--disable-sync',
+  ].filter(Boolean);
+};

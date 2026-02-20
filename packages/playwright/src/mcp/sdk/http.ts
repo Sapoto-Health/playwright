@@ -25,6 +25,7 @@ import { createHttpServer, startHttpServer } from 'playwright-core/lib/utils';
 
 import * as mcpServer from './server';
 
+import type { FullConfig } from '../browser/config';
 import type { ServerBackendFactory } from './server';
 import type { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import type { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -34,11 +35,12 @@ const testDebug = debug('pw:mcp:test');
 export async function startMcpHttpServer(
   config: { host?: string, port?: number },
   serverBackendFactory: ServerBackendFactory,
-  allowedHosts?: string[]
+  allowedHosts?: string[],
+  mutableConfig?: FullConfig,
 ): Promise<string> {
   const httpServer = createHttpServer();
   await startHttpServer(httpServer, config);
-  return await installHttpTransport(httpServer, serverBackendFactory, allowedHosts);
+  return await installHttpTransport(httpServer, serverBackendFactory, allowedHosts, mutableConfig);
 }
 
 export function addressToString(address: string | net.AddressInfo | null, options: {
@@ -54,7 +56,7 @@ export function addressToString(address: string | net.AddressInfo | null, option
   return `${options.protocol}://${host}:${address.port}`;
 }
 
-async function installHttpTransport(httpServer: http.Server, serverBackendFactory: ServerBackendFactory, allowedHosts?: string[]) {
+async function installHttpTransport(httpServer: http.Server, serverBackendFactory: ServerBackendFactory, allowedHosts?: string[], mutableConfig?: FullConfig) {
   const url = addressToString(httpServer.address(), { protocol: 'http', normalizeLoopback: true });
   const host = new URL(url).host;
   allowedHosts = (allowedHosts || [host]).map(h => h.toLowerCase());
@@ -86,6 +88,10 @@ async function installHttpTransport(httpServer: http.Server, serverBackendFactor
       process.emit('SIGINT');
       return;
     }
+    if (url.pathname === '/set-output-dir' && req.method === 'POST') {
+      await handleSetOutputDir(req, res, mutableConfig);
+      return;
+    }
     if (url.pathname.startsWith('/sse'))
       await handleSSE(serverBackendFactory, req, res, url, sseSessions);
     else
@@ -93,6 +99,37 @@ async function installHttpTransport(httpServer: http.Server, serverBackendFactor
   });
 
   return url;
+}
+
+async function handleSetOutputDir(req: http.IncomingMessage, res: http.ServerResponse, mutableConfig?: FullConfig) {
+  if (!mutableConfig) {
+    res.statusCode = 400;
+    return res.end(JSON.stringify({ error: 'outputDir mutation not supported in this mode' }));
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req)
+    chunks.push(chunk as Buffer);
+
+  let body: { outputDir?: string };
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString());
+  } catch {
+    res.statusCode = 400;
+    return res.end(JSON.stringify({ error: 'invalid JSON body' }));
+  }
+
+  if (!body.outputDir || typeof body.outputDir !== 'string') {
+    res.statusCode = 400;
+    return res.end(JSON.stringify({ error: 'outputDir must be a non-empty string' }));
+  }
+
+  mutableConfig.outputDir = body.outputDir;
+  testDebug(`set outputDir to ${body.outputDir}`);
+
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify({ ok: true }));
 }
 
 async function handleSSE(serverBackendFactory: ServerBackendFactory, req: http.IncomingMessage, res: http.ServerResponse, url: URL, sessions: Map<string, SSEServerTransport>) {
