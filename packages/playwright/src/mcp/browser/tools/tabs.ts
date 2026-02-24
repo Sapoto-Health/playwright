@@ -18,6 +18,17 @@ import { z } from 'playwright-core/lib/mcpBundle';
 import { defineTool } from './tool';
 import { renderTabsMarkdown } from '../response';
 
+function isInternalUrl(url: string): boolean {
+  if (url.startsWith('file://') || url.startsWith('data:') || url.startsWith('chrome-extension://'))
+    return true;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+      return true;
+  } catch { /* not internal */ }
+  return false;
+}
+
 const browserTabs = defineTool({
   capability: 'core-tabs',
 
@@ -53,9 +64,21 @@ const browserTabs = defineTool({
         break;
       }
     }
-    const tabHeaders = await Promise.all(context.tabs().map(tab => tab.headerSnapshot()));
-    const result = renderTabsMarkdown(tabHeaders);
-    response.addTextResult(result.join('\n'));
+    const allHeaders = await Promise.all(context.tabs().map(tab => tab.headerSnapshot()));
+
+    if (context.config.filterInternalUrls) {
+      const lines: string[] = [];
+      for (let i = 0; i < allHeaders.length; i++) {
+        if (isInternalUrl(allHeaders[i].url))
+          continue;
+        const tab = allHeaders[i];
+        const current = tab.current ? ' (current)' : '';
+        lines.push(`- ${i}:${current} [${tab.title}](${tab.url})`);
+      }
+      response.addTextResult(lines.length ? lines.join('\n') : 'No visible tabs. Navigate to a URL to create one.');
+    } else {
+      response.addTextResult(renderTabsMarkdown(allHeaders).join('\n'));
+    }
   },
 });
 

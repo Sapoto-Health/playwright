@@ -228,4 +228,9 @@ export type Config = {
    * Specify the language to use for code generation.
    */
   codegen?: 'typescript' | 'none';
+
+  /**
+   * Whether to hide internal Electron tabs (file://, data:, localhost, chrome-extension://) from browser_tabs output.
+   */
+  filterInternalUrls?: boolean;
 };

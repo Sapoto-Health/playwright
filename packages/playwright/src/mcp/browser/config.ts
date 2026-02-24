@@ -75,6 +75,7 @@ export type CLIOptions = {
   userAgent?: string;
   userDataDir?: string;
   viewportSize?: ViewportSize;
+  filterInternalUrls?: boolean;
 };
 
 export const defaultConfig: FullConfig = {
@@ -300,6 +301,7 @@ export function configFromCLIOptions(cliOptions: CLIOptions): Config {
     snapshot: cliOptions.snapshotMode ? { mode: cliOptions.snapshotMode } : undefined,
     outputMode: cliOptions.outputMode,
     outputDir: cliOptions.outputDir,
+    filterInternalUrls: cliOptions.filterInternalUrls,
     imageResponses: cliOptions.imageResponses,
     testIdAttribute: cliOptions.testIdAttribute,
     timeouts: {

@@ -76,6 +76,7 @@ export function decorateCommand(command: Command, version: string) {
       .option('--user-agent <ua string>', 'specify user agent string')
       .option('--user-data-dir <path>', 'path to the user data directory. If not specified, a temporary directory will be created.')
       .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280x720"', resolutionParser.bind(null, '--viewport-size'))
+      .option('--filter-internal-urls', 'hide internal Electron tabs (file://, data:, localhost, chrome-extension://) from browser_tabs output')
       .addOption(new ProgramOption('--vision', 'Legacy option, use --caps=vision instead').hideHelp())
       .addOption(new ProgramOption('--daemon <socket>', 'run as daemon').hideHelp())
       .addOption(new ProgramOption('--daemon-data-dir <path>', 'path to the daemon data directory.').hideHelp())
