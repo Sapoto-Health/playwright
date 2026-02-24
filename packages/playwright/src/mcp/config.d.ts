@@ -228,4 +228,10 @@ export type Config = {
    * Specify the language to use for code generation.
    */
   codegen?: 'typescript' | 'none';
+
+  /**
+   * If specified, only expose tools whose names are in this list.
+   * Applied after capability filtering.
+   */
+  allowedTools?: string[];
 };

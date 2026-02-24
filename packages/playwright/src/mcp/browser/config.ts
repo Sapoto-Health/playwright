@@ -75,6 +75,7 @@ export type CLIOptions = {
   userAgent?: string;
   userDataDir?: string;
   viewportSize?: ViewportSize;
+  'allowed-tools'?: string[];
 };
 
 export const defaultConfig: FullConfig = {
@@ -301,6 +302,7 @@ export function configFromCLIOptions(cliOptions: CLIOptions): Config {
     snapshot: cliOptions.snapshotMode ? { mode: cliOptions.snapshotMode } : undefined,
     outputMode: cliOptions.outputMode,
     outputDir: cliOptions.outputDir,
+    allowedTools: cliOptions['allowed-tools'],
     imageResponses: cliOptions.imageResponses,
     testIdAttribute: cliOptions.testIdAttribute,
     timeouts: {
