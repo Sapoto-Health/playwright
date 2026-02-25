@@ -100,9 +100,7 @@ class BaseContextFactory implements BrowserContextFactory {
     const browser = await this._obtainBrowser(clientInfo, options);
     const browserContext = await this._doCreateContext(browser, clientInfo);
     await addInitScript(browserContext, this.config.browser.initScript);
-    await browserContext.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
+    await addStealthScripts(browserContext);
     return {
       browserContext,
       close: () => this._closeBrowserContext(browserContext, browser)
@@ -226,6 +224,7 @@ class PersistentContextFactory implements BrowserContextFactory {
       try {
         const browserContext = await browserType.launchPersistentContext(userDataDir, launchOptions);
         await addInitScript(browserContext, this.config.browser.initScript);
+        await addStealthScripts(browserContext);
         const close = () => this._closeBrowserContext(browserContext, userDataDir);
         return { browserContext, close };
       } catch (error: any) {
@@ -304,6 +303,193 @@ function createHash(data: string): string {
 async function addInitScript(browserContext: playwright.BrowserContext, initScript: string[] | undefined) {
   for (const scriptPath of initScript ?? [])
     await browserContext.addInitScript({ path: path.resolve(scriptPath) });
+}
+
+async function addStealthScripts(browserContext: playwright.BrowserContext) {
+  await browserContext.addInitScript(() => {
+    // --- P2: Fix navigator.webdriver (prototype-level, undetectable) ---
+    // Delete any instance-level override so getOwnPropertyDescriptor on navigator returns undefined
+    delete Object.getPrototypeOf(navigator).webdriver;
+
+    const webdriverGetter = (() => {
+      const fn = function() { return false; };
+      Object.defineProperty(fn, 'name', { value: 'get webdriver' });
+      return fn;
+    })();
+    // Spoof Function.prototype.toString for the getter to look native
+    const nativeToString = Function.prototype.toString;
+    const spoofMap = new WeakMap<Function, string>();
+    spoofMap.set(webdriverGetter, 'function get webdriver() { [native code] }');
+
+    const originalToString = nativeToString.call.bind(nativeToString);
+    Function.prototype.toString = function() {
+      const spoof = spoofMap.get(this);
+      if (spoof) return spoof;
+      return originalToString(this);
+    };
+    // Make toString itself look native
+    spoofMap.set(Function.prototype.toString, 'function toString() { [native code] }');
+
+    Object.defineProperty(Navigator.prototype, 'webdriver', {
+      get: webdriverGetter,
+      configurable: true,
+      enumerable: true,
+    });
+
+    // --- P2b: Clean navigator.userAgent / navigator.appVersion ---
+    // Strip Electron and app identifiers that leak via CDP-connected contexts.
+    // Matches the cleaning done at Electron's HTTP layer.
+    const cleanUA = (ua: string) => ua
+      .replace(/\s*Electron\/[\d.]+/gi, '')
+      .replace(/\s*automatic-document-fetcher\/[\d.]+/gi, '')
+      .replace(/\s*sapoto\/[\d.]+/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const originalUA = navigator.userAgent;
+    const cleanedUA = cleanUA(originalUA);
+    if (cleanedUA !== originalUA) {
+      Object.defineProperty(Navigator.prototype, 'userAgent', {
+        get: () => cleanedUA,
+        configurable: true,
+        enumerable: true,
+      });
+      // appVersion mirrors userAgent after "Mozilla/"
+      const cleanedAppVersion = cleanUA(navigator.appVersion);
+      if (cleanedAppVersion !== navigator.appVersion) {
+        Object.defineProperty(Navigator.prototype, 'appVersion', {
+          get: () => cleanedAppVersion,
+          configurable: true,
+          enumerable: true,
+        });
+      }
+    }
+
+    // --- P3a: Spoof window.chrome ---
+    if (!(window as any).chrome) {
+      const chrome: any = {
+        app: {
+          isInstalled: false,
+          InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+          RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+          getDetails: function getDetails() { return null; },
+          getIsInstalled: function getIsInstalled() { return false; },
+          installState: function installState() { return 'not_installed'; },
+        },
+        runtime: {
+          OnInstalledReason: {
+            CHROME_UPDATE: 'chrome_update',
+            INSTALL: 'install',
+            SHARED_MODULE_UPDATE: 'shared_module_update',
+            UPDATE: 'update',
+          },
+          OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+          PlatformArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+          PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+          PlatformOs: { ANDROID: 'android', CROS: 'cros', FUCHSIA: 'fuchsia', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+          RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' },
+          connect: function connect() {
+            throw new Error('Could not establish connection. Receiving end does not exist.');
+          },
+          sendMessage: function sendMessage() {
+            throw new Error('Could not establish connection. Receiving end does not exist.');
+          },
+          id: undefined,
+        },
+        csi: function csi() { return { onloadT: Date.now(), startE: Date.now(), pageT: 0 }; },
+        loadTimes: function loadTimes() {
+          return {
+            commitLoadTime: Date.now() / 1000,
+            connectionInfo: 'h2',
+            finishDocumentLoadTime: Date.now() / 1000,
+            finishLoadTime: Date.now() / 1000,
+            firstPaintAfterLoadTime: 0,
+            firstPaintTime: Date.now() / 1000,
+            navigationType: 'Other',
+            npnNegotiatedProtocol: 'h2',
+            requestTime: Date.now() / 1000,
+            startLoadTime: Date.now() / 1000,
+            wasAlternateProtocolAvailable: false,
+            wasFetchedViaSpdy: true,
+            wasNpnNegotiated: true,
+          };
+        },
+      };
+      (window as any).chrome = chrome;
+    }
+
+    // --- P3b: Spoof navigator.plugins ---
+    if (navigator.plugins.length === 0) {
+      const pluginNames = [
+        'PDF Viewer',
+        'Chrome PDF Viewer',
+        'Chromium PDF Viewer',
+        'Microsoft Edge PDF Viewer',
+        'WebKit built-in PDF',
+      ];
+
+      const mimeType = {
+        type: 'application/pdf',
+        suffixes: 'pdf',
+        description: 'Portable Document Format',
+      };
+
+      const fakePluginArray: any[] = [];
+      const fakePluginMap: Record<string, any> = {};
+
+      for (const name of pluginNames) {
+        const plugin = {
+          name,
+          description: 'Portable Document Format',
+          filename: 'internal-pdf-viewer',
+          length: 1,
+          0: mimeType,
+          item: (i: number) => (i === 0 ? mimeType : null),
+          namedItem: (n: string) => (n === 'application/pdf' ? mimeType : null),
+        };
+        fakePluginArray.push(plugin);
+        fakePluginMap[name] = plugin;
+      }
+
+      Object.defineProperty(Navigator.prototype, 'plugins', {
+        get: () => {
+          const arr: any = [...fakePluginArray];
+          arr.item = (i: number) => fakePluginArray[i] ?? null;
+          arr.namedItem = (name: string) => fakePluginMap[name] ?? null;
+          arr.refresh = () => {};
+          return arr;
+        },
+        configurable: true,
+        enumerable: true,
+      });
+
+      Object.defineProperty(Navigator.prototype, 'mimeTypes', {
+        get: () => {
+          const mimes = fakePluginArray.map(p => ({
+            type: 'application/pdf',
+            suffixes: 'pdf',
+            description: 'Portable Document Format',
+            enabledPlugin: p,
+          }));
+          const arr: any = [...mimes];
+          arr.item = (i: number) => mimes[i] ?? null;
+          arr.namedItem = (name: string) => mimes.find(m => m.type === name) ?? null;
+          return arr;
+        },
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    // --- P3c: Spoof navigator.pdfViewerEnabled ---
+    if (!navigator.pdfViewerEnabled) {
+      Object.defineProperty(Navigator.prototype, 'pdfViewerEnabled', {
+        get: () => true,
+        configurable: true,
+        enumerable: true,
+      });
+    }
+  });
 }
 
 export class SharedContextFactory implements BrowserContextFactory {

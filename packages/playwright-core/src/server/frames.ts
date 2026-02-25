@@ -722,8 +722,39 @@ export class Frame extends SdkObject<FrameEventMap> {
     return this._page.delegate.getFrameElement(this);
   }
 
+  private _contextBeingCreated = new Map<types.World, boolean>();
+
   _context(world: types.World): Promise<dom.FrameExecutionContext> {
-    return this._contextData.get(world)!.contextPromise.then(contextOrDestroyedReason => {
+    const data = this._contextData.get(world)!;
+    // Lazy context discovery: when Runtime.enable is suppressed (rebrowser patches active),
+    // contexts are not automatically reported. Trigger discovery on demand.
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0' &&
+        !data.context &&
+        !this._contextBeingCreated.get(world) &&
+        !this.isDetached()) {
+      const delegate = this._page.delegate as any;
+      // Check if this is a CRPage (Chromium) with the _sessionForFrame method
+      if (delegate._sessionForFrame && delegate.utilityWorldName) {
+        this._contextBeingCreated.set(world, true);
+        const frameSession = delegate._sessionForFrame(this);
+        const client = frameSession._client;
+        if (client.__re__emitExecutionContext) {
+          client.__re__emitExecutionContext(world, delegate._targetId, this, delegate.utilityWorldName).catch((e: Error) => {
+            // Discovery failed (timeout, detach, etc). Reset contextPromise so
+            // subsequent _context() calls can retry instead of hanging forever.
+            const d = this._contextData.get(world)!;
+            if (!d.context) {
+              this._setContext(world, null);
+            }
+          }).finally(() => {
+            this._contextBeingCreated.set(world, false);
+          });
+        } else {
+          this._contextBeingCreated.set(world, false);
+        }
+      }
+    }
+    return data.contextPromise.then(contextOrDestroyedReason => {
       if (contextOrDestroyedReason instanceof js.ExecutionContext)
         return contextOrDestroyedReason;
       throw new Error(contextOrDestroyedReason.destroyedReason);

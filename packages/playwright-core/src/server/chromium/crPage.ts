@@ -87,7 +87,7 @@ export class CRPage implements PageDelegate {
     this._page = new Page(this, browserContext);
     // Create a unique utility world for this Playwright instance, just in case there
     // are multiple instances of Playwright connected to the same browser page.
-    this.utilityWorldName = `__playwright_utility_world_${this._page.guid}`;
+    this.utilityWorldName = `__chromium_utility_${this._page.guid}`;
     this._networkManager = new CRNetworkManager(this._page, null);
     // Sync any browser context state to the network manager. This does not talk over CDP because
     // we have not connected any sessions to the network manager yet.
@@ -491,7 +491,7 @@ class FrameSession {
       }),
       this._client.send('Log.enable', {}),
       lifecycleEventsEnabled = this._client.send('Page.setLifecycleEventsEnabled', { enabled: true }),
-      this._client.send('Runtime.enable', {}),
+      ...(process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0' ? [this._client.send('Runtime.enable', {})] : []),
       this._client.send('Page.addScriptToEvaluateOnNewDocument', {
         source: '',
         worldName: this._crPage.utilityWorldName,
@@ -613,6 +613,10 @@ class FrameSession {
   _onFrameNavigated(framePayload: Protocol.Page.Frame, initial: boolean) {
     if (this._eventBelongsToStaleFrame(framePayload.id))
       return;
+    // When Runtime.enable is suppressed, Chrome won't emit Runtime.executionContextsCleared.
+    // We must synthetically clear contexts on navigation so stale contexts are discarded.
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0')
+      this._onExecutionContextsCleared();
     this._page.frameManager.frameCommittedNewDocumentNavigation(framePayload.id, framePayload.url + (framePayload.urlFragment || ''), framePayload.name || '', framePayload.loaderId, initial);
     if (!initial)
       this._firstNonInitialNavigationCommittedFulfill();

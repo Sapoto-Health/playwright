@@ -193,6 +193,105 @@ export class CRSession extends SdkObject<Protocol.EventMap & ConnectionEventMap>
     }
     this._callbacks.clear();
   }
+
+  /**
+   * Lazily discover an execution context ID and emit a synthetic
+   * Runtime.executionContextCreated event so that Playwright's frame
+   * model is populated without ever calling Runtime.enable.
+   */
+  async __re__emitExecutionContext(world: 'main' | 'utility', targetId: string, frame: { _id: string }, worldName?: string): Promise<void> {
+    let contextId: number;
+    if (world === 'main') {
+      contextId = await this.__re__getMainWorld(frame._id, targetId);
+    } else {
+      contextId = await this.__re__getIsolatedWorld(frame._id, worldName || '__chromium_utility_default');
+    }
+    // Emit synthetic Runtime.executionContextCreated so CRPage._onExecutionContextCreated picks it up
+    const syntheticEvent: any = {
+      context: {
+        id: contextId,
+        origin: '',
+        name: world === 'utility' ? worldName : '',
+        auxData: {
+          isDefault: world === 'main',
+          type: 'default',
+          frameId: frame._id,
+        },
+      },
+    };
+    Promise.resolve().then(() => {
+      (this.emit as any)('Runtime.executionContextCreated', syntheticEvent);
+    });
+  }
+
+  /**
+   * Discover the main world execution context ID for a frame without
+   * calling Runtime.enable. Uses Runtime.addBinding + Page.createIsolatedWorld
+   * to trigger a Runtime.bindingCalled event that reveals the context ID.
+   */
+  async __re__getMainWorld(frameId: string, targetId: string): Promise<number> {
+    const bindingName = '__re__' + Math.random().toString(36).slice(2, 15);
+
+    // Add a temporary binding — this makes Chrome fire Runtime.bindingCalled
+    // when the binding is invoked, even without Runtime.enable
+    await this.send('Runtime.addBinding' as any, { name: bindingName });
+
+    const contextIdPromise = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timeout waiting for main world context discovery'));
+      }, 5000);
+
+      const onBindingCalled = (event: any) => {
+        if (event.name === bindingName) {
+          cleanup();
+          resolve(event.executionContextId);
+        }
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.removeListener('Runtime.bindingCalled' as any, onBindingCalled);
+      };
+
+      this.on('Runtime.bindingCalled' as any, onBindingCalled);
+    });
+
+    // Create an isolated world to run a script that calls the binding in the main world
+    const { executionContextId: isolatedContextId } = await this.send('Page.createIsolatedWorld' as any, {
+      frameId,
+      worldName: '__re__probe_' + Math.random().toString(36).slice(2, 10),
+      grantUniveralAccess: true,
+    });
+
+    // From the isolated world, invoke the binding in the main world.
+    // The isolated world has access to the main world's bindings via the global scope.
+    await this.send('Runtime.evaluate' as any, {
+      expression: `window['${bindingName}']('probe')`,
+      contextId: isolatedContextId,
+      awaitPromise: false,
+    }).catch(() => {});
+
+    const contextId = await contextIdPromise;
+
+    // Clean up: remove the temporary binding
+    await this.send('Runtime.removeBinding' as any, { name: bindingName }).catch(() => {});
+
+    return contextId;
+  }
+
+  /**
+   * Get or create an isolated world execution context for a frame.
+   * This is straightforward — Page.createIsolatedWorld returns the context ID directly.
+   */
+  async __re__getIsolatedWorld(frameId: string, worldName: string): Promise<number> {
+    const { executionContextId } = await this.send('Page.createIsolatedWorld' as any, {
+      frameId,
+      worldName,
+      grantUniveralAccess: true,
+    });
+    return executionContextId;
+  }
 }
 
 export class CDPSession extends SdkObject {

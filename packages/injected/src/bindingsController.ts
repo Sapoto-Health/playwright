@@ -49,7 +49,8 @@ export class BindingsController {
       removed: false,
     };
     this._bindings.set(bindingName, data);
-    (this._global as any)[bindingName] = (...args: any[]) => {
+    Object.defineProperty(this._global, bindingName, {
+      value: (...args: any[]) => {
       if (data.removed)
         throw new Error(`binding "${bindingName}" has been removed`);
       if (needsHandle && args.slice(1).some(arg => arg !== undefined))
@@ -71,7 +72,11 @@ export class BindingsController {
       }
       (this._global as any)[this._globalBindingName](JSON.stringify(payload));
       return promise;
-    };
+      },
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
   }
 
   removeBinding(bindingName: string) {

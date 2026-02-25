@@ -921,8 +921,8 @@ export class Worker extends SdkObject<WorkerEventMap> {
 }
 
 export class PageBinding {
-  private static kController = '__playwright__binding__controller__';
-  static kBindingName = '__playwright__binding__';
+  private static kController = '__cdp_binding_ctl__';
+  static kBindingName = '__cdp_binding__';
 
   static createInitScript() {
     return new InitScript(`
@@ -931,7 +931,12 @@ export class PageBinding {
         ${rawBindingsControllerSource.source}
         const property = '${PageBinding.kController}';
         if (!globalThis[property])
-          globalThis[property] = new (module.exports.BindingsController())(globalThis, '${PageBinding.kBindingName}');
+          Object.defineProperty(globalThis, property, {
+            value: new (module.exports.BindingsController())(globalThis, '${PageBinding.kBindingName}'),
+            enumerable: false,
+            writable: true,
+            configurable: true,
+          });
       })();
     `);
   }
@@ -952,6 +957,10 @@ export class PageBinding {
   }
 
   static async dispatch(page: Page, payload: string, context: dom.FrameExecutionContext) {
+    // When rebrowser patches are active, lazy context discovery may trigger binding calls
+    // with non-JSON payloads (plain strings from the probe script). Filter them out.
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0' && !payload.startsWith('{'))
+      return;
     const { name, seq, serializedArgs } = JSON.parse(payload) as BindingPayload;
     try {
       assert(context.world);
