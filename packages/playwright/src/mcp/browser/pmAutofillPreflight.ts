@@ -198,7 +198,12 @@ export async function runPmAutofillPreflight(
   // Rung 2: REFRESH
   tried.push('refresh');
   {
-    await opts.page.reload({ waitUntil: 'load' });
+    try {
+      await opts.page.reload({ waitUntil: 'load', timeout: budget.refresh });
+    } catch (err) {
+      log(`[pm-preflight] rung=refresh reload-failed err=${(err as Error).message}`);
+      // fall through to rung 3
+    }
     pwLoc = await waitForPasswordField(opts.page, passwordSelector, budget.noFormWait);
     if (!pwLoc) {
       const elapsedMs = Date.now() - started;
@@ -217,12 +222,15 @@ export async function runPmAutofillPreflight(
 
   // Rung 3: FOCUS-CLICK
   tried.push('focus-click');
+  let clicked = false;
   if (usernameSelector) {
     try {
+      await opts.page.locator(usernameSelector).first().scrollIntoViewIfNeeded({ timeout: 1000 });
       const box = await opts.page.locator(usernameSelector).first().boundingBox();
       if (box) {
         await opts.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         log(`[pm-preflight] rung=focus-click coords=(${Math.round(box.x + box.width / 2)},${Math.round(box.y + box.height / 2)})`);
+        clicked = true;
       } else {
         log(`[pm-preflight] rung=focus-click no-bounding-box`);
       }
@@ -232,7 +240,7 @@ export async function runPmAutofillPreflight(
   } else {
     log(`[pm-preflight] rung=focus-click skipped=no-username-selector`);
   }
-  {
+  if (clicked) {
     const snap = await pollUntilFilled(opts.page, passwordSelector, usernameSelector, budget.focusClick, pollMs);
     if (snap) {
       const elapsedMs = Date.now() - started;
