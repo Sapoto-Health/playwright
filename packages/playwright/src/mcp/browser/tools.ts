@@ -35,6 +35,7 @@ import tracing from './tools/tracing';
 import verify from './tools/verify';
 import video from './tools/video';
 import wait from './tools/wait';
+import waitForPmAutofill from './tools/waitForPmAutofill';
 
 import type { Tool } from './tools/tool';
 import type { FullConfig } from './config';
@@ -61,6 +62,7 @@ export const browserTools: Tool<any>[] = [
   ...verify,
   ...video,
   ...wait,
+  ...waitForPmAutofill,
 ];
 
 export function filteredTools(config: FullConfig) {
