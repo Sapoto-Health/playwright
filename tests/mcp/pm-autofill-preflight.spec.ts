@@ -31,14 +31,16 @@ test('rung 1 succeeds — baseline fill', async ({ page }) => {
 });
 
 test('rung 2 succeeds — fills only after reload', async ({ page }) => {
-  // First load: never fills. After a reload, the script checks sessionStorage
+  // First load: never fills. After a reload, the script checks window.name
   // and fills. page.reload() inside the ladder triggers rung 2.
+  // Note: sessionStorage is reset on data: URL reloads (opaque origins), but
+  // window.name persists across same-tab navigations regardless of origin.
   const body = `
-    if (sessionStorage.getItem('reloaded')) {
+    if (window.name === 'reloaded') {
       document.querySelector('[name=username]').value = 'u';
       document.querySelector('[name=password]').value = 'p';
     } else {
-      sessionStorage.setItem('reloaded', '1');
+      window.name = 'reloaded';
     }
   `;
   await page.goto(htmlForm(body));
