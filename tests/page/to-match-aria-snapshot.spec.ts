@@ -234,6 +234,46 @@ test('expanded attribute', async ({ page }) => {
   }
 });
 
+test('haspopup attribute', async ({ page }) => {
+  await page.setContent(`
+    <button aria-haspopup="false">False</button>
+  `);
+
+  await expect(page.locator('body')).toMatchAriaSnapshot(`
+    - button "False"
+  `);
+
+  {
+    const e = await expect(page.locator('body')).toMatchAriaSnapshot(`
+      - button "False" [haspopup]
+    `, { timeout: 1000 }).catch(e => e);
+    expect(stripAnsi(e.message)).toContain('expect(locator).toMatchAriaSnapshot(expected) failed');
+    expect(stripAnsi(e.message)).toContain('Timeout:  1000ms');
+  }
+
+  await page.setContent(`
+    <button aria-haspopup="true">True</button>
+    <button aria-haspopup="menu">Menu</button>
+  `);
+
+  await expect(page.locator('body')).toMatchAriaSnapshot(`
+    - button "True" [haspopup]
+    - button "Menu" [haspopup]
+  `);
+
+  await expect(page.locator('body')).toMatchAriaSnapshot(`
+    - button "True" [haspopup=true]
+    - button "Menu" [haspopup=true]
+  `);
+
+  {
+    const e = await expect(page.locator('body')).toMatchAriaSnapshot(`
+      - button "True" [haspopup=invalid]
+    `, { timeout: 1000 }).catch(e => e);
+    expect(stripAnsi(e.message)).toContain(' attribute must be a boolean');
+  }
+});
+
 test('level attribute', async ({ page }) => {
   await page.setContent(`
     <h2>Section Title</h2>

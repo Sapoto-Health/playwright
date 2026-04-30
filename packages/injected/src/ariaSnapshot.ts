@@ -265,6 +265,12 @@ function toAriaNode(element: Element, options: InternalOptions): aria.AriaNode |
   if (roleUtils.kAriaExpandedRoles.includes(role))
     result.expanded = roleUtils.getAriaExpanded(element);
 
+  if (roleUtils.kAriaHaspopupRoles.includes(role)) {
+    const haspopup = roleUtils.getAriaHaspopup(element);
+    if (haspopup)
+      result.haspopup = haspopup;
+  }
+
   if (roleUtils.kAriaLevelRoles.includes(role))
     result.level = roleUtils.getAriaLevel(element);
 
@@ -417,6 +423,8 @@ function matchesNode(node: aria.AriaNode | string, template: aria.AriaTemplateNo
   if (template.disabled !== undefined && template.disabled !== node.disabled)
     return false;
   if (template.expanded !== undefined && template.expanded !== node.expanded)
+    return false;
+  if (template.haspopup !== undefined && template.haspopup !== !!node.haspopup)
     return false;
   if (template.level !== undefined && template.level !== node.level)
     return false;
@@ -598,8 +606,12 @@ export function renderAriaTree(ariaSnapshot: AriaSnapshot, publicOptions: AriaTr
       key += ` [checked]`;
     if (ariaNode.disabled)
       key += ` [disabled]`;
-    if (ariaNode.expanded)
+    if (ariaNode.expanded === true)
       key += ` [expanded]`;
+    else if (ariaNode.expanded === false)
+      key += ` [expanded=false]`;
+    if (ariaNode.haspopup)
+      key += ` [haspopup]`;
     if (ariaNode.active && options.renderActive)
       key += ` [active]`;
     if (ariaNode.level)

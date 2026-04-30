@@ -29,6 +29,7 @@ export type AriaProps = {
   checked?: boolean | 'mixed';
   disabled?: boolean;
   expanded?: boolean;
+  haspopup?: boolean;
   active?: boolean;
   level?: number;
   pressed?: boolean | 'mixed';
@@ -67,7 +68,7 @@ export function hasPointerCursor(ariaNode: AriaNode): boolean {
 }
 
 function ariaPropsEqual(a: AriaProps, b: AriaProps): boolean {
-  return a.active === b.active && a.checked === b.checked && a.disabled === b.disabled && a.expanded === b.expanded && a.selected === b.selected && a.level === b.level && a.pressed === b.pressed;
+  return a.active === b.active && a.checked === b.checked && a.disabled === b.disabled && a.expanded === b.expanded && a.haspopup === b.haspopup && a.selected === b.selected && a.level === b.level && a.pressed === b.pressed;
 }
 
 // We pass parsed template between worlds using JSON, make it easy.
@@ -489,6 +490,11 @@ export class KeyParser {
     if (key === 'expanded') {
       this._assert(value === 'true' || value === 'false', 'Value of "expanded" attribute must be a boolean', errorPos);
       node.expanded = value === 'true';
+      return;
+    }
+    if (key === 'haspopup') {
+      this._assert(value === 'true' || value === 'false', 'Value of "haspopup" attribute must be a boolean', errorPos);
+      node.haspopup = value === 'true';
       return;
     }
     if (key === 'active') {
