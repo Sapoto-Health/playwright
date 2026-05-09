@@ -1079,6 +1079,19 @@ export function getAriaExpanded(element: Element): boolean | undefined {
   return undefined;
 }
 
+export const kAriaHaspopupRoles = ['button', 'link', 'menuitem', 'combobox', 'tab', 'menuitemcheckbox', 'menuitemradio', 'gridcell', 'textbox'];
+export function getAriaHaspopup(element: Element): boolean {
+  // https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup
+  // ARIA 1.2 allowed values: false | true | menu | listbox | tree | grid | dialog.
+  // We coerce to a boolean — anything other than the literal "false" (or absence) is truthy.
+  if (!kAriaHaspopupRoles.includes(getAriaRole(element) || ''))
+    return false;
+  const haspopup = element.getAttribute('aria-haspopup');
+  if (haspopup === null || haspopup === 'false')
+    return false;
+  return true;
+}
+
 export const kAriaLevelRoles = ['heading', 'listitem', 'row', 'treeitem'];
 export function getAriaLevel(element: Element): number {
   // https://www.w3.org/TR/wai-aria-1.2/#aria-level

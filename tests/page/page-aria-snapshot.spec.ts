@@ -419,6 +419,22 @@ it('should treat input value as text in templates, but not for checkbox/radio/fi
   `);
 });
 
+it('should serialize aria-haspopup and explicit aria-expanded=false', async ({ page }) => {
+  await page.setContent(`
+    <button aria-haspopup="true" aria-expanded="false">Accounts</button>
+    <button aria-haspopup="menu" aria-expanded="true">Tools</button>
+    <button aria-haspopup="false">Plain</button>
+    <button>Bare</button>
+  `);
+
+  await checkAndMatchSnapshot(page.locator('body'), `
+    - button "Accounts" [expanded=false] [haspopup]
+    - button "Tools" [expanded] [haspopup]
+    - button "Plain"
+    - button "Bare"
+  `);
+});
+
 it('should not use on as checkbox value', async ({ page }) => {
   await page.setContent(`
     <input type='checkbox'>
