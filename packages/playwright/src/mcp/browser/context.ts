@@ -123,9 +123,9 @@ export class Context {
   }
 
   /**
-   * Check if a URL is an internal Electron application URL that should
-   * be hidden from agents. Matches: file://, data:, chrome-extension://,
-   * localhost, 127.0.0.1.
+   * Check if a URL is an internal Electron/Chrome surface that should be
+   * hidden from agents. Matches: file://, data:, chrome-extension://,
+   * chrome:// (NTP, omnibox-popup, settings, …), localhost, 127.0.0.1.
    */
   private _isInternalUrl(url: string): boolean {
     if (url.startsWith('file://'))
@@ -133,6 +133,8 @@ export class Context {
     if (url.startsWith('data:'))
       return true;
     if (url.startsWith('chrome-extension://'))
+      return true;
+    if (url.startsWith('chrome://'))
       return true;
     try {
       const parsed = new URL(url);
